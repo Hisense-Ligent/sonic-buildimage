@@ -1,0 +1,13 @@
+# Brand_Assets 标量配置（design.md 4.1 / 5.1 节）
+#
+# 这是整个品牌改造的唯一真源：改品牌只改这个文件，Rebrand_Tool 下一次执行
+# 就会把新值应用到全部 Brand_Touchpoints（需求 1.3）。
+#
+# brand_name 的取值受 [A-Za-z0-9 ._-] 白名单与 1..32 长度限制约束，
+# 原因见 brandconfig.py 中 validate_brand_name() 的注释（shell 注入 / bash -n）。
+
+brand_name: Ligent            # 可视品牌名，进 demo_brand_display
+brand_name_upper: LIGENT      # ASCII LOGO 与大写场合
+tagline: "-- Ligent Data Center Network Operating System --"
+help_url: "https://github.com/Hisense-Ligent/sonic-buildimage"
+login_banner_text: "Ligent Network OS"
