@@ -9,8 +9,8 @@
 
 后续任务会在此基础上扩展出三类工作区状态：
 
-* ``WorkspaceState.UPSTREAM``  —— 上游基线（本任务已实现）
-* ``WorkspaceState.REBRANDED`` —— 已改造（任务 4 起，由 rebrand.py 施加）
+* ``WorkspaceState.UPSTREAM``  —— 上游基线（任务 1 已实现）
+* ``WorkspaceState.REBRANDED`` —— 已改造（任务 3 起，由 touchpoints.apply_all 施加）
 * ``WorkspaceState.DRIFTED``   —— 锚点被破坏（任务 4.11，由 generators.upstream_drift 施加）
 """
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -143,6 +144,25 @@ def snapshot(root: Path) -> dict[str, bytes]:
     return result
 
 
+def rebrand_workspace(root: Path, assets_dir: Path | None = None) -> Path:
+    """把 Brand_Assets 应用到工作区，得到 ``WorkspaceState.REBRANDED``。
+
+    直接调 ``touchpoints.apply_all`` 而不是起子进程跑 ``rebrand.py``：策略层是
+    纯 Python 函数，进程内调用让 100 轮属性测试快一个数量级，且诊断（异常与
+    退出码）比解析 stderr 更精确。CLI 的退出码契约由任务 4 的用例单独覆盖。
+
+    延迟 import 是必要的：conftest 在 ``sys.path`` 注入之前就被 pytest 收集，
+    顶层 import 会在任务 3 之前的历史提交上直接崩掉整个测试会话。
+    """
+    if str(LIGENT_DIR) not in sys.path:
+        sys.path.insert(0, str(LIGENT_DIR))
+    from brandconfig import load_brand_assets
+    from touchpoints import apply_all
+
+    apply_all(root, load_brand_assets(assets_dir or BRAND_ASSETS_DIR))
+    return root
+
+
 # ---------------------------------------------------------------------------
 # pytest fixtures
 # ---------------------------------------------------------------------------
@@ -182,16 +202,18 @@ def make_tmp_repo(tmp_path: Path, upstream_bytes: dict[str, bytes]):
     counter = {"n": 0}
 
     def _factory(state: WorkspaceState = WorkspaceState.UPSTREAM) -> Path:
-        if state is not WorkspaceState.UPSTREAM:
-            # 已改造 / 锚点被破坏两种状态依赖 rebrand.py 与 generators，
-            # 分别在任务 4 与 4.13 落地。此处显式失败，避免静默返回基线状态
-            # 让属性测试误判通过。
+        if state is WorkspaceState.DRIFTED:
+            # 锚点被破坏的工作区依赖 generators.upstream_drift（任务 4.13）。
+            # 显式失败而不是静默返回基线状态——后者会让属性测试误判通过。
             raise NotImplementedError(
-                f"工作区状态 {state.value} 尚未实现（见任务 4 / 4.13）"
+                f"工作区状态 {state.value} 尚未实现（见任务 4.13）"
             )
         counter["n"] += 1
         root = tmp_path / f"repo-{counter['n']}"
         root.mkdir()
-        return materialize_upstream(root, upstream_bytes)
+        materialize_upstream(root, upstream_bytes)
+        if state is WorkspaceState.REBRANDED:
+            rebrand_workspace(root)
+        return root
 
     return _factory
