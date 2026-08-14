@@ -1,0 +1,83 @@
+# Ligent SONiC CI/CD 流水线
+#
+# 本文件为 Ligent fork 专用工作流，与上游 .github/workflows/ 下的其他工作流互不影响。
+# 当前为骨架版本：仅包含触发上下文输出与代码检出。
+# 品牌改造（rebrand）、Preflight、构建、校验、归档与清理步骤在任务 11 中补全。
+#
+# 需求对应关系见各配置项旁的注释（编号引用 requirements.md）。
+
+name: Ligent SONiC Build
+
+on:
+  # 需求 5.1 / 5.2：仅 ligent_brand 分支推送触发，其他分支不触发
+  push:
+    branches: [ ligent_brand ]
+  # 需求 5.3：支持手动触发
+  workflow_dispatch:
+    inputs:
+      # 需求 5.4：目标平台参数（choice 限定取值，避免误填）
+      platform:
+        description: 目标平台
+        type: choice
+        options: [ vs ]
+        default: vs
+      # 需求 5.4：目标分支或 commit 参数
+      ref:
+        description: 目标分支或 commit
+        type: string
+        default: ligent_brand
+      # 运维便利项：只跑 Preflight 与 Rebrand（冒烟模式）
+      skip_build:
+        description: 只跑 Preflight 与 Rebrand（冒烟）
+        type: boolean
+        default: false
+  # 需求 10.4：刻意不配置 pull_request / pull_request_target，
+  # 使来自 fork 的 PR 结构性地无法调度到 self-hosted runner 上。
+
+# 需求 5.5：同一 ref 上新的推送取消先前运行中的作业，只保留最新一次
+concurrency:
+  group: ligent-build-${{ github.ref }}
+  cancel-in-progress: true
+
+# 需求 10 的最小权限原则：作业只需读取仓库内容
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    # 需求 7.1：调度到 Ligent 专用标签的 self-hosted runner
+    runs-on: [ self-hosted, linux, x64, ligent-sonic-builder ]
+    # 需求 7.8：单次作业执行超时上限
+    timeout-minutes: 300
+    env:
+      # 需求 7.3：默认构建平台 vs（push 事件下 inputs 为空，回落到 vs）
+      PLATFORM: ${{ inputs.platform || 'vs' }}
+      SKIP_BUILD: ${{ inputs.skip_build || 'false' }}
+    steps:
+      # 需求 5.6：作业开始时输出触发事件类型、提交 SHA、分支名称与目标平台
+      - name: Log trigger context
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "sha=${{ github.sha }}"
+          echo "ref_name=${{ github.ref_name }}"
+          echo "platform=${PLATFORM}"
+          echo "skip_build=${SKIP_BUILD}"
+          echo "runner=$(hostname)"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          # 子模块由后续任务以 git submodule update --init --recursive 手动初始化（需求 7.2）
+          submodules: false
+          # 版本号生成依赖完整 git 历史
+          fetch-depth: 0
+
+      - name: Pipeline skeleton notice
+        run: |
+          echo "Ligent build pipeline skeleton is in place."
+          echo "Preflight / rebrand / build / verify / archive steps land in a later task."
